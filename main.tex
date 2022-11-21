@@ -1,0 +1,330 @@
+%% USEFUL LINKS:
+%% -------------
+%%
+%% - UiO LaTeX guides:          https://www.mn.uio.no/ifi/tjenester/it/hjelp/latex/
+%% - Mathematics:               https://en.wikibooks.org/wiki/LaTeX/Mathematics
+%% - Physics:                   https://ctan.uib.no/macros/latex/contrib/physics/physics.pdf
+%% - Basics of Tikz:            https://en.wikibooks.org/wiki/LaTeX/PGF/Tikz
+%% - All the colors!            https://en.wikibooks.org/wiki/LaTeX/Colors
+%% - How to make tables:        https://en.wikibooks.org/wiki/LaTeX/Tables
+%% - Code listing styles:       https://en.wikibooks.org/wiki/LaTeX/Source_Code_Listings
+%% - \includegraphics           https://en.wikibooks.org/wiki/LaTeX/Importing_Graphics
+%% - Learn more about figures:  https://en.wikibooks.org/wiki/LaTeX/Floats,_Figures_and_Captions
+%% - Automagic bibliography:    https://en.wikibooks.org/wiki/LaTeX/Bibliography_Management  (this one is kinda difficult the first time)
+%%
+%%                              (This document is of class "revtex4-1", the REVTeX Guide explains how the class works)
+%%   REVTeX Guide:              http://www.physics.csbsju.edu/370/papers/Journal_Style_Manuals/auguide4-1.pdf
+%%
+%% COMPILING THE .pdf FILE IN THE LINUX IN THE TERMINAL
+%% ----------------------------------------------------
+%%
+%% [terminal]$ pdflatex report_example.tex
+%%
+%% Run the command twice, always.
+%%
+%% When using references, footnotes, etc. you should run the following chain of commands:
+%%
+%% [terminal]$ pdflatex report_example.tex
+%% [terminal]$ bibtex report_example
+%% [terminal]$ pdflatex report_example.tex
+%% [terminal]$ pdflatex report_example.tex
+%%
+%% This series of commands can of course be gathered into a single-line command:
+%% [terminal]$ pdflatex report_example.tex && bibtex report_example.aux && pdflatex report_example.tex && pdflatex report_example.tex
+%%
+%% ----------------------------------------------------
+
+
+\documentclass[english,notitlepage,reprint,nofootinbib]{revtex4-1}  % defines the basic parameters of the document
+% For preview: skriv i terminal: latexmk -pdf -pvc filnavn
+% If you want a single-column, remove "reprint"
+
+% Allows special characters (including æøå)
+\usepackage[utf8]{inputenc}
+% \usepackage[english]{babel}
+
+%% Note that you may need to download some of these packages manually, it depends on your setup.
+%% I recommend downloading TeXMaker, because it includes a large library of the most common packages.
+
+\usepackage{physics,amssymb}  % mathematical symbols (physics imports amsmath)
+\usepackage{amsmath}
+\usepackage{amsthm} 
+\usepackage{graphicx}         % include graphics such as plots
+\usepackage{xcolor}           % set colors
+\usepackage{hyperref}         % automagic cross-referencing
+\usepackage{listings}         % display code
+\usepackage{subfigure}        % imports a lot of cool and useful figure commands
+\newcommand{\vect}{\boldsymbol} 
+% \usepackage{float}
+%\usepackage[section]{placeins}
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+\usepackage{subfigure}
+\usepackage{braket}
+\usepackage{tikz}
+\usetikzlibrary{quantikz}
+% defines the color of hyperref objects
+% Blending two colors:  blue!80!black  =  80% blue and 20% black
+\hypersetup{ % this is just my personal choice, feel free to change things
+    colorlinks,
+    linkcolor={red!50!black},
+    citecolor={blue!50!black},
+    urlcolor={blue!80!black}}
+
+
+% ===========================================
+
+\newtheorem{lemma}{Lemma}
+\newcommand{\sta}{\State}
+\newcommand{\comment}{\Comment}
+\begin{document}
+
+\title{Modelling phase transitions with the Ising model}  % self-explanatory
+\author{Keran Chen and Torstein Bjelland} % self-explanatory
+\date{\today}                             % self-explanatory
+\noaffiliation                            % ignore this, but keep it.
+
+
+%This is how we create an abstract section.
+\begin{abstract}
+	The Ising model is one of the most important mathematical models in statistical physics. In this project we aimed to study the general properties of the system described by the 2D Ising model and attempt to numerically estimate the critical temperature at which the system undergoes phase transition. Using the Markov Chain Monte Carlo method for sampling. Finally, parallelisation with OpenMP was used to increase performance.
+\end{abstract}
+\maketitle
+
+\begingroup\small\noindent\raggedright\textbf{Source code}\\
+The source code, data, and/or other artifacts have been made available at \url{https://github.com/torstbje/CompPhys4}.
+\endgroup
+
+% ===========================================
+\section{Introduction}
+The Ising model is proposed by German physicist Ernst Ising on the behaviour of Ferromagnetism, which contains discrete magnetic spins which can locate on lattice sties. It is one of the simplest and the few exactly solvable model which allows identification of phase transition (i.e. from a magnetised phase to a phase with no net magnetisation) in statistical mechanics. Ising solved the 1D model and showed that it has no phase transition. The 2D model was also solved exactly later in 1944 by Lars Onsager~\cite{Onsager1944} in a famously difficult calculation. There's no known analytical solution to the Ising model in dimension higher than 2D~\cite{Berlinsky2019}. 
+In this project we have simulated the 2D Ising model and found numerical solutions to the critical temperature $ T_C $ of the 2D Ising model in a square lattice for different lattice length $ L $ and observed behaviours of the system around $ T_C $.
+The report will first present the relevant background physics in the Theory section~\ref{sec:theory} and algorithms in the Methods section~\ref{sec:methods}. Then results are displayed followed by analysis and discussion of its significance, before finally reaching the conclusion.
+%
+
+% ===========================================
+
+% ===========================================
+\section{Theory}\label{sec:theory}
+%
+\subsection{Ising Model}\label{sub:ising}
+Ferromagnetic materials have a phase transition such that below the critical temperature $ T_C $ the substance has a magnetisation, called spontaneous magnetisation, which breaks when the temperature is increased. 
+The Ising model for ferromagnetism makes the assumption that there are only two possible spin-states: spin up and spin down, which can be mapped to $ +1 $ and $ -1 $. Only interactions between the nearest neighbors in the lattice is considered. This project considers the case of a system without external fields, with the energy described from the neighboring spin pairs as:
+\begin{equation}
+	\label{eq:energy}
+	 E(\mathbf{s}) = -J \sum\limits_{\langle kl \rangle}^{N} s_k s_l.
+\end{equation}
+Here $\langle kl \rangle$ means that the sum goes over all neighbouring pairs of spins, without double-counting, and $J$ is the coupling constant. \footnote{ $ J $ could in reality differ at different sites, but only the case with constant $J$ is considered in this project.}
+
+The total magnetisation $ (M) $ is:
+\begin{equation}
+	\label{eq:magnetization}
+	 M(\mathbf{s}) = \sum\limits_{i}^{N} s_i
+\end{equation}
+For easy comparison between different lattice sizes, we define \textbf{energy per spin ($\epsilon$)} and \textbf{magnetization per spin ($m$)}:
+\begin{equation}
+	\label{eq:energy-magnetization-per-spin}
+	\begin{aligned}
+		\epsilon(\mathbf{s}) &= \frac{E(\mathbf{s})}{N}\\[1ex]
+  		m(\mathbf{s}) &= \frac{M(\mathbf{s})}{N}
+	\end{aligned}
+\end{equation}
+Boltzmann distribution which describes the probability of finding the system at state $ \mathbf{s} $ at temperature $ T $:
+\begin{equation}
+	\label{eq:boltzmann}
+	 p(\mathbf{s} ; T) = \frac{1}{Z} e^{-\beta E(\mathbf{s})}
+\end{equation}
+where $ Z $ is the partition function in statistical mechanics in~\ref{eq:partion} and $ \beta $  is the ``inverse temperature'':
+\[ \beta = \frac{1}{k_B T} \] where $ k_b $ is the Boltzmann constant
+\begin{equation}
+	\label{eq:partion}
+	 Z = \sum\limits_{\textrm{all possible}\;\mathbf{s}} e^{-\beta E(\mathbf{s})}
+\end{equation}
+
+The specific heat capacity:
+\begin{equation}\label{eq:specific_heat}
+    C_v = \frac{1}{N} \frac{1}{k_BT^2} (\langle E^2 \rangle - \langle E \rangle ^2)
+\end{equation}
+
+The magnetic susceptibility:
+\begin{equation}\label{eq:suscept}
+    \chi = \frac{1}{N} \frac{1}{k_B T}(\langle M^2 \rangle - \langle |M| \rangle^2 )
+\end{equation}
+
+\subsection{Units}\label{sub:units}
+Spins $ \mathbf{s}  $ are considered unitless, and we will use the coupling constant $ J $  as our base unit for energy\footnote{$J$ has units of energy as seen in~\ref{eq:energy}}. The Boltzmann constant has units of $ \frac{energy}{temperature} $. From there all of the other units are derived as follows.
+\begin{itemize}
+	\item unit of energy: $ J $\footnote{Again, this is $J$ the couple constant and not $J$ the energy unit \textit{Joules}}
+	\item unit of temperature: $ J/k_B $
+	\item unit of magnetization: unitless (since spins are unitless)
+        \item unit of specific heat capcity: $k_B$ according to equation~\eqref{eq:specific_heat}
+        \item unit of susceptibility: $ 1/J $ according to equation~\eqref{eq:suscept}
+\end{itemize}
+
+\subsection{Model description}\label{sub:model_desc}
+The magnet is described as a 2D lattice, with each point corresponding to a spin particle, with either spin up or spin down. The size of the lattice is considered as effectively infinite, with translational symmetry by an integer $L$ such an $L\times L$ section of the lattice can be used to describe the entire structure. With the assumption of translational symmetry, the edge particles can be considered as neighbours to those on the opposite edge as they must have the same properties as their actual neighbouring particles. 
+
+\subsection{The four element lattice}
+\subsubsection*{Configuration and properties}\label{sub:config}
+For a selected particle in a $2\times 2$ lattice, their neighbour in direction $x$ is also their neighbor in direction $-x$ according to the boundary conditions described in section \ref{sub:model_desc}. 
+There are a limited number of different layouts for the particles. With $4$ particles there are $2^4 = 16$ possible spin configurations. There are however only $6$ groups of structurally different states as the translational symmetry causes degeneracy. Since the lattice is periodic, it is possible to obtain other configurations that is structurally identical by translating the sample.
+The states with only spin up or only spin downs are the only non-degenerate states. The degeneracy of states with one spin up, or one spin down has degeneracy $4$ as either of the $4$ particles can be chosen to have the opposite spin.
+There are two structurally different states with no net magnetization (equal number of spin up and spin down). These two spins up (or downs) can either be on the same row (as in row 3 of Table~\ref{tab:2x2}) or diagonally oriented (as in row 4 of Table~\ref{tab:2x2}). These orientations though have equal number of spin up and downs. 
+The case with alternating spins has degeneracy of degree $2$ as choosing the spin of one state defines the entire structure, this can only be done in $2$ ways. The other case has degeneracy $4$, as one particle, and the direction of opposite spins must be chosen to describe the structure.
+The structurally different states are shown in table \ref{tab:2x2} with columns showing their degree of degeneracy as well as the total energy and momentum as found from equations \eqref{eq:energy} and \eqref{eq:magnetization}.
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|c|c|c|c|c|}
+        \hline
+        spin ups & Energy & Magnetization & Degeneracy & Structure\\
+        \hline
+        0 & $-8J$ & $-4$ & 1 & $\begin{bmatrix}
+            -1 & -1 \\ -1 & -1
+        \end{bmatrix}$ \\
+        \hline
+        1 & $0$ & $-2$ & 4 & $\begin{bmatrix}
+            +1 & -1 \\ -1 & -1
+        \end{bmatrix}$ \\
+        \hline
+        2 & $0$ & $0$ & 4 & $\begin{bmatrix}
+            +1 & +1 \\ -1 & -1
+        \end{bmatrix}$ \\
+        \hline
+        2 & $8J$ & $0$ & 2 & $\begin{bmatrix}
+            +1 & -1 \\ -1 & +1
+        \end{bmatrix}$ \\
+        \hline
+        3 & $0J$ & $2$ & 4 & $\begin{bmatrix}
+            +1 & +1 \\ +1 & -1
+        \end{bmatrix}$ \\
+        \hline
+        4 & $-8J$ & $4$ & 1 & $\begin{bmatrix}
+            +1 & +1 \\ +1 & +1
+        \end{bmatrix}$ \\
+        \hline
+    \end{tabular}
+    \caption{Summary of all possible states of a 2D lattice of spin particles. J is the coupling constant. The degeneracy column shows the structural degeneracy.\footnote{Here by structural degeneracy I mean states that can be obtained from other states by simply translating the system. As a consequence, they have the same energy and magnetisation.} Degeneracy of energy magnetization can be found by combining the rows with equal values for the quantity of interest. The structure column shows an example of the configurations in that group.}
+    \label{tab:2x2}
+\end{table}
+\subsubsection*{Statistical properties}
+The partition function is found by studying the table \ref{tab:2x2}. Counting degeneracy, there are two states with energy $-8J$, two states with energy $8J$ and $12$ states with energy $0$. Inserting this into the function \ref{eq:partition} gives the partition function as
+\begin{equation}\label{eq:partition_L2}
+    Z = 12 + 2(e^{-8J\beta} + e^{8J\beta}) = 12 + 4\cosh(8J\beta).
+\end{equation}
+The variance of the energy is given by equation \ref{eq:variance}. Inserting the energies, with their degeneracy into the mean equation, it is found that the mean energy and the mean magnetization is zero, and the mean squared energy per particle is:
+
+while the mean of the squared energy is:
+\begin{equation}\label{eq:mean_square_energy}
+    \braket{\epsilon^2} = \frac{2(-8J)^2 + 2(8J)^2}{4^2 \times 16} = J^2,
+\end{equation}
+where the energy per particle $\epsilon(s) = E(s)/n$ is the energy of the state divided by the number of particles $n=4$. 
+
+The expectation value of the absolute value of magnetization per spin is:
+\begin{equation}
+	\langle |m| \rangle = \frac{1}{n_s}\sum_{n_s} \frac{M}{N} = \frac{|-4|+4\times|-2|+4\times|2|+4}{4 \times 16} = \frac{3}{8}
+\end{equation}
+In the same way, the square magnetization per particle is
+\begin{equation}\label{eq:mean_square_mag}
+    \braket{m^2} = \frac{(-4)^2 +(-2)^2+ 2^2 +4^2}{4^2 \times 16} = \frac{1}{4}.
+\end{equation}
+The specific heat capacity is:
+\begin{equation}
+	\begin{aligned}
+		C_v &= \frac{1}{N} \frac{1}{k_bT^2} (\langle E^2 \rangle - \langle E \rangle ^2) \\
+		    &= \frac{N}{k_bT^2} (\frac{\langle E^2 \rangle}{N^2} - \frac{\langle E \rangle ^2}{N^2}) \\
+		    &= \frac{N}{k_bT^2} ((\langle \epsilon^2 \rangle - \langle \epsilon \rangle ^2)) \\
+		    &= \frac{N}{k_bT^2} J^2 \\
+		    &= \frac{4J^2}{k_bT^2} \\
+	\end{aligned}
+\end{equation}
+The magnetic susceptibility is:
+\begin{equation}
+	\begin{aligned}
+		\chi &= \frac{1}{N} \frac{1}{k_B T}(\langle M^2 \rangle - \langle |M| \rangle^2) \\
+		  &= \frac{N}{k_bT} (\langle m^2 \rangle - \langle |m| \rangle^2) \\
+		  &= \frac{N}{k_bT} (\frac{1}{4}-\frac{3}{8}) \\
+		  &= -\frac{1}{2} \\
+	\end{aligned}
+\end{equation}
+
+
+\subsection{General square lattices}
+In the general $L\times L$ for $L > 2$ every spin particle has $4$ different neighbouring particles, in contrast to the two effective neighbours in the $2\times 2$ lattice. Note that the general square lattices still have the same periodic boundary condition.
+\subsubsection*{Flipping of spins}\label{sub:flip}
+
+Assume that the lattice is in some arbitrary microstate. According to equation \eqref{eq:energy}, each spin particle only affects the total energy by its interaction with its closest neighbours. If an arbitrary spin (say,$S_j$), is flipped, the change in energy $\delta E(s)$ should only depend on the interaction between spin $S_j$ and its closest neighbours. Assuming that this process is done multiple time, the difference between the energy at step $i$ and $i+1$ is given by
+\begin{equation}\label{eq:energy_diff}
+    dE_i = E_{i+1} - E_i = \sum_{\braket{kl}}(s_{k,i+1}s_{l,i+1} - s_{k,i}s_{l,i}).
+\end{equation}
+As only one spin particle $s_j$ has been flipped, the terms not containing this specific particle annihilate each other as $s_{i+1} = s_i \;\forall i\neq j$. The energy difference is reduced to a sum over the neighbours of $s_j$:
+\begin{equation}
+    dE_i = -J\sum_k s_{k,i}(s_{j,i+1} - s_{j,i}). 
+\end{equation}
+By the choice that  the spin of $s_j$ is flipped, its contribution must be $\pm 2$ depending on if it flipped from spin up of to spin down or the other way around. With the neighbour spin-particles described by the $s_j1,s_j2,s_j3,s_j4$, the equation for change in energy \eqref{eq:energy_diff} becomes
+\begin{equation}
+    dE = \mp 2J(s_{j1} + s_{j2} + s_{j3} + s_{j4}).
+\end{equation}
+Recall each of the four terms can only take values $-1$ (if the spins were anti-aligned) or $1$ (if the spins were aligned). A spin flip changes exactly all of the value 
+This can be solved further by inserting $1$ and $-1$ for the spin particles to find which values are allowed. There is degeneracy in this choice as it doesn't matter which particle is given which spin, only the sum matters. The possible values for this sum is the same as the possible total magnetization for the $2\times 2$ lattices. The table \ref{tab:2x2} shows
+the possible magnetization: $-4,-2,0,2,4$. The sign $\mp$ doesn't split the degeneracy as the absolute values are the same for the positive and the negative magnetization's. Including the factor $2$ describing the change in absolute spin from the flipped particle, gives the possible energy values from a spin flip
+
+\begin{equation}\label{eq:dE}
+    dE_i = bJ \quad,\quad b\in \{-8,-4,0,4,8\}
+\end{equation}
+
+\subsubsection*{Acceptance condition}\label{sub:acceptance}
+The model considers if a proposed spin flip is accepted based on how it changes the energy of the system. The Metropolis-Hastings algorithm\cite{10.1093/biomet/57.1.97} is used to decide if the flip is accepted or not. With this algorithm
+a proposed change is always accepted if it decreases the total energy, or doesn't affect it. If the change would increase the energy, an acceptance value is calculated as the ratio of probability distribution values of the two states
+\begin{equation}\label{eq:acceptance}
+    A(x_i \to x') = \frac{p(s')}{p(s_i)},
+\end{equation}
+where the function $p(s_i),p(s')$ is the distribution function \eqref{eq:distribution} evaluated at the current state, and the proposed state respectively. Inserting the distribution function into \eqref{eq:acceptance}, it is found that the acceptance function depends on the change in energy as well as the inverse temperature \eqref{eq:inv_temp}:
+\begin{equation}\label{eq:acceptance_dE}
+    A(x_i \to x') = e^{-\beta (E' - E_i)} = e^{-\beta dE'}.
+\end{equation}
+For a given temperature, this function can only take two possible values, one for each of the allowed positive energy change $dE = 4J$, and $dE = 8J$. The acceptance value for these changes are given by $A_1,A_2$ respectively. 
+As a random element to this process, a random value $r$ is chosen from the uniform distribution over the range $[0,1)$. If this value is larger than the acceptance value, the flip is rejected, and the new state is exactly the same as the old state. It it's smaller (or equal) to the acceptance value, the flip as approved.
+
+
+% ===========================================
+\section{Methods}\label{sec:methods}
+%
+\subsection{Computational model of the lattice}
+
+The boundary conditions discussed in section \ref{sub:config} is handled in the code by letting each particle store the memory pointer to each of its neighbors. This is used for calculating the energy contribution for each particle, and also to iterate trough the lattice. This removes the need for checking if the particles are on the boundary or not as all particles are treated equally.
+
+\subsection{Considerations for improved performance}
+
+In section (\ref{sub:acceptance}) it was shown that the acceptance function can only give two possible outcomes, corresponding to two allowed energy changes:
+\begin{equation}
+    \begin{aligned}
+        A_1 &= e^{-4J\beta} \\
+        A_2 &= e^{-8J\beta}.
+    \end{aligned}
+\end{equation}
+To avoid calculating this quantity multiple times, they are calculated before the simulation and saved\footnote{Actually, only $A_1$ is calculated this way, as $A_2 = A_1^2$.}.
+
+
+
+\newpage
+% ===========================================
+\section{Results}\label{sec:results}
+%
+
+
+
+% ===========================================
+\section{Discussion}\label{sec:discussion}
+%
+
+% ===========================================
+\section{Conclusion}\label{sec:conclusion}
+
+
+\onecolumngrid
+
+%\bibliographystyle{apalike}
+\bibliography{ref}
+
+
+\end{document}
